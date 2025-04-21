@@ -92,8 +92,8 @@ const Canvas = () => {
   const canvasRef = useRef(null);
   const fabricCanvasRef = useRef(null);
   const dispatch = useDispatch();
-  const { image, stencil } = useSelector((state) => state.canvas);
-  const frameSize = Math.min(stencil.width, stencil.height) * 0.7; // 70% of the smaller dimension
+  const { image, stencil, scale } = useSelector((state) => state.canvas);
+  const frameSize = Math.min(stencil.width, stencil.height) * 0.7;
 
   // Initialize canvas once
   useEffect(() => {
@@ -118,31 +118,50 @@ const Canvas = () => {
     handleResize();
 
     // Add mouse wheel handler for zoom
-    canvas.on('mouse:wheel', function(opt) {
-      const delta = opt.e.deltaY;
-      let zoom = canvas.getZoom();
-      zoom = zoom * (0.95 ** Math.sign(delta));
+    const handleMouseWheel = (opt) => {
+      const evt = opt.e;
+      const delta = evt.deltaY;
+      let newZoom = canvas.getZoom() * (0.999 ** delta);
       
       // Limit zoom
-      if (zoom > 20) zoom = 20;
-      if (zoom < 0.01) zoom = 0.01;
+      if (newZoom > 3) newZoom = 3;
+      if (newZoom < 0.1) newZoom = 0.1;
 
       // Get mouse position relative to canvas
-      const pointer = canvas.getPointer(opt.e);
+      const pointer = canvas.getPointer(evt);
       const point = new fabric.Point(pointer.x, pointer.y);
-
-      // Zoom to point
-      canvas.zoomToPoint(point, zoom);
       
-      opt.e.preventDefault();
-      opt.e.stopPropagation();
-    });
+      // Update zoom
+      canvas.zoomToPoint(point, newZoom);
+      dispatch(setScale(newZoom));
+      
+      evt.preventDefault();
+      evt.stopPropagation();
+    };
+
+    canvas.on('mouse:wheel', handleMouseWheel);
 
     return () => {
       window.removeEventListener('resize', handleResize);
       canvas.dispose();
     };
   }, [frameSize]);
+
+  // Handle scale changes from Redux (zoom buttons)
+  useEffect(() => {
+    const canvas = fabricCanvasRef.current;
+    if (!canvas) return;
+
+    const currentZoom = canvas.getZoom();
+    if (Math.abs(currentZoom - scale) > 0.01) {
+      const center = new fabric.Point(
+        canvas.width / 2,
+        canvas.height / 2
+      );
+      canvas.zoomToPoint(center, scale);
+      canvas.renderAll();
+    }
+  }, [scale]);
 
   // Handle image changes
   useEffect(() => {
@@ -152,8 +171,8 @@ const Canvas = () => {
     canvas.clear();
 
     fabric.Image.fromURL(image, img => {
-      // Calculate scale to fit inside frame while maintaining aspect ratio
-      const scale = Math.min(
+      // Calculate initial scale to fit inside frame
+      const initialScale = Math.min(
         frameSize / img.width,
         frameSize / img.height
       );
@@ -163,8 +182,8 @@ const Canvas = () => {
         top: frameSize / 2,
         originX: 'center',
         originY: 'center',
-        scaleX: scale,
-        scaleY: scale,
+        scaleX: initialScale,
+        scaleY: initialScale,
         selectable: true,
         hasControls: true,
         hasBorders: true,
@@ -179,11 +198,30 @@ const Canvas = () => {
 
       // Add event handlers
       img.on('moving', () => {
+        // Keep image within frame bounds
+        const bound = frameSize / 2;
+        const imgBounds = img.getBoundingRect();
+        
+        if (img.left < -bound) img.left = -bound;
+        if (img.left > bound) img.left = bound;
+        if (img.top < -bound) img.top = -bound;
+        if (img.top > bound) img.top = bound;
+        
         dispatch(setPosition({ x: img.left, y: img.top }));
         canvas.renderAll();
       });
       
       img.on('scaling', () => {
+        // Ensure minimum scale to cover frame
+        const minScale = Math.min(
+          frameSize / img.width,
+          frameSize / img.height
+        );
+        
+        if (img.scaleX < minScale) {
+          img.scale(minScale);
+        }
+        
         dispatch(setScale(img.scaleX));
         canvas.renderAll();
       });

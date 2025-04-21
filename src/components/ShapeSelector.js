@@ -38,7 +38,7 @@ const shapes = [
   { type: 'circle', label: '○' },
   { type: 'triangle', label: '△' },
   { type: 'star', label: '★' },
-  { type: 'heart', label: '❤' },
+  // { type: 'heart', label: '❤' },
 ];
 
 const ShapeSelector = () => {
